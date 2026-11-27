@@ -111,9 +111,45 @@ async function getTelemetryByTimeRange(deviceId, startTime, endTime) {
     .toArray();
 }
 
+async function getLatestDevices() {
+  return getTelemetryCollection()
+    .aggregate([
+      {
+        $sort: {
+          timestamp: -1,
+        },
+      },
+      {
+        $group: {
+          _id: "$metadata.deviceId",
+          latest: {
+            $first: "$$ROOT",
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          deviceId: "$_id",
+          sensorType: "$latest.metadata.sensorType",
+          value: "$latest.value",
+          unit: "$latest.metadata.unit",
+          timestamp: "$latest.timestamp",
+        },
+      },
+      {
+        $sort: {
+          deviceId: 1,
+        },
+      },
+    ])
+    .toArray();
+}
+
 module.exports = {
   insertTelemetry,
   insertManyTelemetry,
   getTelemetryByDevice,
   getTelemetryByTimeRange,
+  getLatestDevices,
 };
