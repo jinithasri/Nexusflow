@@ -2,7 +2,7 @@
 const { getTelemetryCollection } = require("../config/database");
 
 function validateTelemetry(record) {
-  if (!record || typeof record !== "object") {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
     throw new Error("Telemetry record must be an object");
   }
 
@@ -111,8 +111,45 @@ async function getTelemetryByTimeRange(deviceId, startTime, endTime) {
     .toArray();
 }
 
+// Get online threshold from environment.
+// Default: 5 minutes (300,000 milliseconds).
+function getOnlineThresholdMs() {
+  const configuredThreshold = Number(
+    process.env.DEVICE_ONLINE_THRESHOLD_MS
+  );
+
+  if (
+    Number.isFinite(configuredThreshold) &&
+    configuredThreshold > 0
+  ) {
+    return configuredThreshold;
+  }
+
+  return 5 * 60 * 1000;
+}
+
+// Determine device status from its latest telemetry timestamp.
+function getDeviceStatus(
+  timestamp,
+  now = Date.now(),
+  thresholdMs = getOnlineThresholdMs()
+) {
+  const timestampMs = new Date(timestamp).getTime();
+
+  if (Number.isNaN(timestampMs)) {
+    return "offline";
+  }
+
+  const ageMs = now - timestampMs;
+
+  return ageMs >= 0 && ageMs <= thresholdMs
+    ? "online"
+    : "offline";
+}
+
+// Get distinct devices with their latest telemetry and status.
 async function getLatestDevices() {
-  return getTelemetryCollection()
+  const devices = await getTelemetryCollection()
     .aggregate([
       {
         $sort: {
@@ -144,6 +181,11 @@ async function getLatestDevices() {
       },
     ])
     .toArray();
+
+  return devices.map((device) => ({
+    ...device,
+    status: getDeviceStatus(device.timestamp),
+  }));
 }
 
 module.exports = {
@@ -152,4 +194,5 @@ module.exports = {
   getTelemetryByDevice,
   getTelemetryByTimeRange,
   getLatestDevices,
+  getDeviceStatus,
 };
